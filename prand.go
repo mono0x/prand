@@ -13,14 +13,50 @@ type source struct {
 	pool sync.Pool
 }
 
-var _ rand.Source64 = (*source)(nil)
+var (
+	_ rand.Source64 = (*source)(nil)
+	_ Source        = (*newSource)(nil)
+	_ Default       = (*defaultSource)(nil)
+)
 
-func NewSource(newSource func() rand.Source) rand.Source {
+type newSource struct {
+	Source func() rand.Source
+}
+
+type defaultSource struct {
+	Error error
+}
+
+type Source interface {
+	New() rand.Source
+}
+
+type Default interface {
+	New() rand.Source
+}
+
+func (new newSource) New() rand.Source {
 	return &source{
 		pool: sync.Pool{
-			New: func() interface{} { return newSource() },
+			New: func() interface{} {
+				return new.Source()
+			},
 		},
 	}
+}
+
+func (s *defaultSource) New() rand.Source {
+	b := make([]byte, unsafe.Sizeof(int64(0)))
+	if _, err := cryptorand.Read(b); err != nil {
+		s.Error = err
+		return nil
+	}
+	var seed int64
+	if err := binary.Read(bytes.NewReader(b), binary.LittleEndian, &seed); err != nil {
+		s.Error = err
+		return nil
+	}
+	return rand.NewSource(seed)
 }
 
 func (s *source) Seed(seed int64) {}
@@ -40,46 +76,116 @@ func (s *source) Uint64() uint64 {
 	return uint64(source.Int63())>>31 | uint64(source.Int63())<<32
 }
 
-func DefaultNew() rand.Source {
-	b := make([]byte, unsafe.Sizeof(int64(0)))
-	if _, err := cryptorand.Read(b); err != nil {
-		panic(err) // TODO: improve error handling
+var (
+	defaultsrc = defaultSource{
+		Error: nil,
 	}
-	var seed int64
-	if err := binary.Read(bytes.NewReader(b), binary.LittleEndian, &seed); err != nil {
-		panic(err) // TODO: improve error handling
+	src = newSource{
+		Source: defaultsrc.New,
 	}
-	return rand.NewSource(seed).(rand.Source)
+	globalRand = rand.New(src.New())
+	err        = defaultsrc.Error
+)
+
+func Int63() (int64, error) {
+	if err != nil {
+		return globalRand.Int63(), err
+	}
+	return globalRand.Int63(), nil
 }
 
-var globalRand = rand.New(NewSource(DefaultNew))
+func Uint32() (uint32, error) {
+	if err != nil {
+		return globalRand.Uint32(), err
+	}
+	return globalRand.Uint32(), nil
+}
 
-func Int63() int64 { return globalRand.Int63() }
+func Uint64() (uint64, error) {
+	if err != nil {
+		return globalRand.Uint64(), err
+	}
+	return globalRand.Uint64(), nil
+}
 
-func Uint32() uint32 { return globalRand.Uint32() }
+func Int31() (int32, error) {
+	if err != nil {
+		return globalRand.Int31(), err
+	}
+	return globalRand.Int31(), nil
+}
 
-func Uint64() uint64 { return globalRand.Uint64() }
+func Int() (int, error) {
+	if err != nil {
+		return globalRand.Int(), err
+	}
+	return globalRand.Int(), nil
+}
 
-func Int31() int32 { return globalRand.Int31() }
+func Int63n(n int64) (int64, error) {
+	if err != nil {
+		return globalRand.Int63n(n), err
+	}
+	return globalRand.Int63n(n), nil
+}
 
-func Int() int { return globalRand.Int() }
+func Int31n(n int32) (int32, error) {
+	if err != nil {
+		return globalRand.Int31n(n), err
+	}
+	return globalRand.Int31n(n), nil
+}
 
-func Int63n(n int64) int64 { return globalRand.Int63n(n) }
+func Intn(n int) (int, error) {
+	if err != nil {
+		return globalRand.Intn(n), err
+	}
+	return globalRand.Intn(n), nil
+}
 
-func Int31n(n int32) int32 { return globalRand.Int31n(n) }
+func Float64() (float64, error) {
+	if err != nil {
+		return globalRand.Float64(), err
+	}
+	return globalRand.Float64(), nil
+}
 
-func Intn(n int) int { return globalRand.Intn(n) }
+func Float32() (float32, error) {
+	if err != nil {
+		return globalRand.Float32(), err
+	}
+	return globalRand.Float32(), nil
+}
 
-func Float64() float64 { return globalRand.Float64() }
+func Perm(n int) ([]int, error) {
+	if err != nil {
+		return globalRand.Perm(n), err
+	}
+	return globalRand.Perm(n), nil
+}
 
-func Float32() float32 { return globalRand.Float32() }
+func Shuffle(n int, swap func(i, j int)) error {
+	if err != nil {
+		return err
+	}
+	globalRand.Shuffle(n, swap)
+	return nil
+}
 
-func Perm(n int) []int { return globalRand.Perm(n) }
+func Read(p []byte) (n int, err error) {
+	return globalRand.Read(p)
+}
 
-func Shuffle(n int, swap func(i, j int)) { globalRand.Shuffle(n, swap) }
+func NormFloat64() (float64, error) {
+	if err != nil {
+		return globalRand.NormFloat64(), err
+	}
+	return globalRand.NormFloat64(), nil
+}
 
-func Read(p []byte) (n int, err error) { return globalRand.Read(p) }
-
-func NormFloat64() float64 { return globalRand.NormFloat64() }
-
-func ExpFloat64() float64 { return globalRand.ExpFloat64() }
+func ExpFloat64() (float64, error) {
+	if err != nil {
+		return globalRand.ExpFloat64(), err
+	}
+	return globalRand.ExpFloat64(), nil
+}
